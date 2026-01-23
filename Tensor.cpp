@@ -11,36 +11,9 @@
 
 
 // TODO : Look for OpenMP for threading and compare it with manual threading
-//        See for the other implementation of the argmax function
-//        See for the other implementation of the transpose function
+//        See for alternative implementation of the argmax function
+//        See for altnernative implementation of the transpose function
 //        Think about how the loop could be unrolled to use all the registers available
-/*
-* Something like that
-
-        for (; b + 4 <= minibatchSize; b += 4)  // Unroll by 4 if possible
-        {
-            const PACKAGE_TYPE packedValuesB0 = _LOAD(tensor._values + (b + 0) * size + i);
-            const PACKAGE_TYPE packedValuesB1 = _LOAD(tensor._values + (b + 1) * size + i);
-            const PACKAGE_TYPE packedValuesB2 = _LOAD(tensor._values + (b + 2) * size + i);
-            const PACKAGE_TYPE packedValuesB3 = _LOAD(tensor._values + (b + 3) * size + i);
-
-            // Accumulate SIMD-packed results
-            sum = _SUB_PS(sum, packedValuesB0);
-            sum = _SUB_PS(sum, packedValuesB1);
-            sum = _SUB_PS(sum, packedValuesB2);
-            sum = _SUB_PS(sum, packedValuesB3);
-        }
-
-        // Process any remaining minibatch elements
-        for (; b < minibatchSize; ++b)
-        {
-            const PACKAGE_TYPE packedValuesB = _LOAD(tensor._values + b * size + i);
-            sum = _SUB_PS(sum, packedValuesB);
-        }
-
-
-*/
-
 // ------- TENSORS ALIAS -------
 
 
@@ -2476,4 +2449,5 @@ Tensor<colsB, colsA> mul_transposed_scalar(const Tensor<colsA>& tensorA, const T
     }
 
     return output;
+
 }
