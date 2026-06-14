@@ -33,6 +33,6 @@
 
 ---
 
-## References
+ ## References
 
 - [Neural Networks and Deep Learning](http://neuralnetworksanddeeplearning.com/chap1.html)
