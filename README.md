@@ -120,10 +120,10 @@ CRTP base `Layer<Child, Input, Output>` with zero virtual dispatch.
 
 ## Roadmap
 
-- **Convolutions** - `Conv` is declared but not yet functional; the next major piece.
-- **Multi-threading** - kernels are tuned for a single core; batched/tiled GEMM would extend the story to larger layers.
-- **More optimisers** - only SGD + momentum today; Adam / RMSProp planned.
-- **Dynamic graphs** - compile-time shapes are great for safety and inlining, but fix topology at build time.
+- **Convolutions**: `Conv` is declared but not yet functional; the next major piece.
+- **Multi-threading**: kernels are tuned for a single core; batched/tiled GEMM would extend the story to larger layers.
+- **More optimisers**: only SGD + momentum today; Adam / RMSProp planned.
+- **Dynamic graphs**: compile-time shapes are great for safety and inlining, but fix topology at build time.
 
 ---
 
