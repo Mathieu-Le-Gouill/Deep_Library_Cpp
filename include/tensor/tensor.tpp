@@ -2300,9 +2300,15 @@ Tensor<colsB, rowsA, rest...> mul_transposed(const Tensor<colsA, rowsA, rest...>
 template<std::size_t colsA, std::size_t rowsA>
 Tensor<rowsA> mul_b_transposed_scalar(const Tensor<colsA, rowsA>& tensorA, const Tensor<colsA>& tensorB)
 {
-    constexpr std::size_t COLS_A_UNROLL_FACTOR = (colsA >= 17 * PACKAGE_LENGTH) ? 16 :
-                                                 (colsA >= 9 * PACKAGE_LENGTH) ? 8 :
-                                                 (colsA >= 5 * PACKAGE_LENGTH) ? 4 : 1;
+    // Fused multiply-add with scalar fallback when the target lacks FMA.
+    constexpr auto fma = [](PACKAGE_FLOAT a, PACKAGE_FLOAT b, PACKAGE_FLOAT c) -> PACKAGE_FLOAT
+    {
+        #ifdef __FMA__
+            return _FMADD(a, b, c);
+        #else
+            return _ADD_PS(_MUL(a, b), c);
+        #endif
+    };
 
     constexpr auto offCols = colsA % PACKAGE_LENGTH;
 
@@ -2312,61 +2318,61 @@ Tensor<rowsA> mul_b_transposed_scalar(const Tensor<colsA, rowsA>& tensorA, const
 
     output.init();
 
-    float* iterA;
-    float* iterB = tensorB._values;
+    const float* tensorA_values = tensorA._values;
+    const float* tensorB_values = tensorB._values;
 
     float* iterO = output._values;
 
-    
-    for (std::size_t r = 0; r < rowsA; ++r)
+    // This is a matrix-vector product: every output row is a dot product of a
+    // weight row with the *same* input vector. Computing one row at a time would
+    // reload the whole input vector once per row, and with rowsA rows those
+    // redundant loads dominate (the kernel becomes load-bound, not FMA-bound)
+    //
+    // So we register-block ROW_BLOCK rows at a time: each input package is loaded
+    // once and fed to all ROW_BLOCK rows. That cuts input traffic by ROW_BLOCK
+    // and, since each blocked row owns an independent accumulator, also keeps
+    // ROW_BLOCK FMA chains in flight to hide FMA latency
+    constexpr std::size_t ROW_BLOCK = 8;
+
+    // Accumulates the dot products of ROW_BLOCK consecutive weight rows (starting
+    // at rowBase) against the shared input vector, then horizontal-sums each
+    const auto compute_block = [&]<std::size_t BLOCK>(std::size_t rowBase)
     {
-        iterA = tensorA._values + r * colsA;
+        const float* a[BLOCK];
+        PACKAGE_FLOAT acc[BLOCK];
 
-        PACKAGE_FLOAT sum;
-
-        if constexpr (colsA >= PACKAGE_LENGTH)
+        for (std::size_t b = 0; b < BLOCK; ++b)
         {
-            sum = _MUL( _LOAD(iterA), _LOAD(iterB));
-
-            std::size_t i = PACKAGE_LENGTH;
-
-            UNROLL_LOOP(COLS_A_UNROLL_FACTOR)
-            for (; i + PACKAGE_LENGTH <= colsA; i += PACKAGE_LENGTH)
-            {
-                const PACKAGE_FLOAT packageA = _LOAD(iterA + i);
-                const PACKAGE_FLOAT packageB = _LOAD(iterB + i);
-
-                #ifdef __FMA__
-                    sum = _FMADD(packageA, packageB, sum);
-                #else
-                    sum = _ADD_PS(_MUL(packageA, packageB), sum);
-                #endif
-            }
-
-            if constexpr (offCols)
-            {
-                const PACKAGE_FLOAT packageA = _MASKLOAD(iterA + i, mask);
-                const PACKAGE_FLOAT packageB = _MASKLOAD(iterB + i, mask);
-
-                #ifdef __FMA__
-                    sum = _FMADD(packageA, packageB, sum);
-                #else
-                    sum = _ADD_PS(_MUL(packageA, packageB), sum);
-                #endif
-            }
-        }
-        else
-        {
-            const PACKAGE_FLOAT packageA = _LOAD(iterA);
-            const PACKAGE_FLOAT packageB = _LOAD(iterB);
-
-            sum = _AND( _MUL(packageA, packageB), remainderMask<colsA>());
+            a[b]   = tensorA_values + (rowBase + b) * colsA;
+            acc[b] = _SETZERO();
         }
 
-        *iterO = _HSUM(sum);
+        std::size_t i = 0;
+        for (; i + PACKAGE_LENGTH <= colsA; i += PACKAGE_LENGTH)
+        {
+            const PACKAGE_FLOAT vb = _LOAD(tensorB_values + i);
+            for (std::size_t b = 0; b < BLOCK; ++b)
+                acc[b] = fma(_LOAD(a[b] + i), vb, acc[b]);
+        }
 
-        ++iterO;
-    }
+        if constexpr (offCols)
+        {
+            const PACKAGE_FLOAT vb = _MASKLOAD(tensorB_values + i, mask);
+            for (std::size_t b = 0; b < BLOCK; ++b)
+                acc[b] = fma(_MASKLOAD(a[b] + i, mask), vb, acc[b]);
+        }
+
+        for (std::size_t b = 0; b < BLOCK; ++b)
+            iterO[rowBase + b] = _HSUM(acc[b]);
+    };
+
+    std::size_t r = 0;
+    for (; r + ROW_BLOCK <= rowsA; r += ROW_BLOCK)
+        compute_block.template operator()<ROW_BLOCK>(r);
+
+    // Tail rows (fewer than ROW_BLOCK) handled one at a time.
+    for (; r < rowsA; ++r)
+        compute_block.template operator()<1>(r);
 
     return output;
 }
