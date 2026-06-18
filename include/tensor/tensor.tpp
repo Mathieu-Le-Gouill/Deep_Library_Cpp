@@ -2415,43 +2415,6 @@ Tensor<colsB, colsA> mul_transposed_scalar(const Tensor<colsA>& tensorA, const T
         }
     }
 
-    
-    for (std::size_t c = 0; c < colsA; ++c)
-    {
-        PACKAGE_FLOAT packageA = _LOAD1(tensorA._values + c);
-
-        std::size_t i = 0;
-
-        UNROLL_LOOP(COLS_B_UNROLL_FACTOR)
-        for (; i + PACKAGE_LENGTH <= colsB; i += PACKAGE_LENGTH)
-        {
-            const PACKAGE_FLOAT packageB = _LOAD(tensorB._values + i);
-            const PACKAGE_FLOAT packageC = _LOAD(output._values + i + c * colsB);
-
-            #ifdef __FMA__
-                const PACKAGE_FLOAT result = _FMADD(packageA, packageB, packageC);
-            #else
-                const PACKAGE_FLOAT result = _ADD_PS(_MUL(packageA, packageB), packageC);
-            #endif
-
-            _STORE(output._values + i + c * colsB, result);
-        }
-
-        if constexpr (offset)
-        {
-            const PACKAGE_FLOAT packageB = _LOAD(tensorB._values + i);
-            const PACKAGE_FLOAT packageC = _LOAD(output._values + i + c * colsB);
-
-            #ifdef __FMA__
-                const PACKAGE_FLOAT result = _FMADD(packageA, packageB, packageC);
-            #else
-                const PACKAGE_FLOAT result = _ADD_PS(_MUL(packageA, packageB), packageC);
-            #endif
-
-            _MASKSTORE(output._values + i + c * colsB, mask, result);
-        }
-    }
-
     return output;
 
 }

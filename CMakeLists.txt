@@ -14,3 +14,11 @@ target_compile_features(Deep_Library_CPP PUBLIC cxx_std_23)
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
 target_compile_options(Deep_Library_CPP PUBLIC -O3 -mavx2 -mfma -msse4.1 -msse4.2)
 endif()
+
+add_executable(benchmark benchmarks/benchmark.cpp)
+target_include_directories(benchmark PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(benchmark PUBLIC cxx_std_23)
+
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+target_compile_options(benchmark PUBLIC -O3 -mavx2 -mfma -msse4.1 -msse4.2)
+endif()

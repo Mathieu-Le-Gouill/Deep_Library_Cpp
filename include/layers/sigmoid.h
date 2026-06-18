@@ -23,7 +23,7 @@ public:
     inline InputType Backward(OutputType& upstream_loss_gradient) noexcept
     {
         // Compute the derivative of the sigmoid function with respect to the input
-        OutputType loss_gradient = std::move(upstream_loss_gradient) * _output * (ones<inputDims...>() - _output);
+        OutputType loss_gradient = std::move(upstream_loss_gradient) * _output * (_output * (-1.0f) + 1.0f);
 
         return loss_gradient;
     }

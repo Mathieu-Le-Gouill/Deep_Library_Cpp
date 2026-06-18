@@ -1,7 +1,8 @@
 #include "tensor/tensor.h"
+#include "compiler/compiler_optimizations.h"
 #include <cmath>
 #include <random>
-#include <cstring> 
+#include <cstring>
 
 #ifndef _CMP_GT_OQ
     #define _CMP_GT_OQ 30
@@ -10,45 +11,34 @@
 // ------ TENSORS LAYERS FUNCTIONS -------
 
 inline float sigmoid(float x) {
-    return 1.0 / (1.0 + exp(-x));
+    return 1.0f / (1.0f + expf(-x));
 }
 
 // Apply the sigmoid function on the tensor values
 template<::std::size_t ...Dimensions>
 void Tensor<Dimensions...>::apply_sigmoid()
 {
-    for(int i=0; i<_size; i++)
-    {
-        _values[i] = sigmoid(_values[i]);// Compute the matrix sigmoid
-    }
-
-
-    /*
-    const PACKAGE_TYPE set0 = _SETZERO();
-    const PACKAGE_TYPE set1 = _SET1_PS(1.f);
+    const PACKAGE_FLOAT zeros = _SETZERO();
+    const PACKAGE_FLOAT ones  = _SET1_PS(1.f);
 
     size_t i = 0;
 
-    #pragma omp parallel for schedule(dynamic)
+    UNROLL_LOOP(UNROLL_FACTOR)
     for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
     {
-        const PACKAGE_TYPE packedValues = _LOAD(_values + i); // Load values from memory
-
-        const PACKAGE_TYPE expValues = _EXP( _SUB_PS(set0, packedValues));  // Compute exponent
-		const PACKAGE_TYPE sigmoid = _RCP( _ADD(set1, expValues)); // Compute sigmoid
-
-        _STORE(_values + i, sigmoid); // Store values in memory
+        const PACKAGE_FLOAT x = _LOAD(_values + i);
+        const PACKAGE_FLOAT e = _EXP(_SUB_PS(zeros, x));           // exp(-x)
+        const PACKAGE_FLOAT s = _DIV(ones, _ADD_PS(ones, e));       // 1 / (1 + exp(-x))
+        _STORE(_values + i, s);
     }
 
     if constexpr (_offset)
     {
-        const PACKAGE_TYPE packedValues = _LOAD(_values + i); // Load values from memory
-
-		const PACKAGE_TYPE expValues = _EXP( _SUB_PS(set0, packedValues));  // Compute exponent
-		const PACKAGE_TYPE sigmoid = _RCP( _ADD(set1, expValues)); // Compute sigmoid
-
-        _MASKSTORE(_values + i, remainderMaskSI<_offset>(), sigmoid); // Store values in memory
-	}*/
+        const PACKAGE_FLOAT x = _LOAD(_values + i);
+        const PACKAGE_FLOAT e = _EXP(_SUB_PS(zeros, x));
+        const PACKAGE_FLOAT s = _DIV(ones, _ADD_PS(ones, e));
+        _MASKSTORE(_values + i, remainderMaskSI<_offset>(), s);
+    }
 }
 
 
@@ -60,7 +50,7 @@ void Tensor<Dimensions...>::apply_ReLU()
 
     size_t i = 0;
 
-    #pragma omp parallel for schedule(dynamic)
+    UNROLL_LOOP(UNROLL_FACTOR)
     for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
     {
         const PACKAGE_FLOAT packedValues = _LOAD(_values + i); // Load values from memory
@@ -85,7 +75,7 @@ void Tensor<Dimensions...>::apply_ReLU_derivative()
 
     size_t i = 0;
 
-    #pragma omp parallel for schedule(dynamic)
+    UNROLL_LOOP(UNROLL_FACTOR)
     for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
     {
         const PACKAGE_FLOAT packedValues = _LOAD(_values + i); // Load values from memory
@@ -121,7 +111,7 @@ void Tensor<Dimensions...>::apply_normalization()
 
     size_t i = 0;
 
-    #pragma omp parallel for schedule(dynamic)
+    UNROLL_LOOP(UNROLL_FACTOR)
     for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
     {
         const PACKAGE_FLOAT packedValues = _LOAD(_values + i); // Load values from memory
@@ -167,11 +157,11 @@ void Tensor<Dimensions...>::norm_shift_and_scale(float mean, float variance, flo
 
     size_t i = 0;
 
-    #pragma omp parallel for schedule(dynamic)
+    UNROLL_LOOP(UNROLL_FACTOR)
     for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
     {
         const PACKAGE_FLOAT packedValues = _LOAD(_values + i); // Load values from memory
-        
+
         #ifdef __FMA__
             const PACKAGE_FLOAT norm = _FMSUB(packedValues, packedSigmaReciprocal, packedMean); // Normalize
             const PACKAGE_FLOAT result = _FMADD(norm, packedScale, packedShift); // Scale and shift
@@ -219,7 +209,6 @@ Tensor<Dimensions...> Tensor<Dimensions...>::apply_dropout(float rate)
 
     size_t i = 0;
 
-    #pragma omp parallel for schedule(dynamic)
     for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
     {
         // Generate random values between 0 and 1
@@ -258,7 +247,7 @@ void Tensor<Dimensions...>::apply_mask(const Tensor<Dimensions...>& mask)
 {
     size_t i = 0;
 
-    #pragma omp parallel for schedule(dynamic)
+    UNROLL_LOOP(UNROLL_FACTOR)
     for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
     {
         const PACKAGE_FLOAT packedValues = _LOAD(_values + i); // Load values from memory
@@ -293,7 +282,6 @@ void Tensor<Dimensions...>::apply_Softmax()
 
         size_t i = PACKAGE_LENGTH;
 
-        #pragma omp parallel for schedule(dynamic)
         for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
         {
             const PACKAGE_FLOAT packedValues = _LOAD(_values + i); // Load values from memory
@@ -329,7 +317,6 @@ void Tensor<Dimensions...>::apply_Softmax()
 
     size_t i = 0;
 
-    #pragma omp parallel for schedule(dynamic)
     for (; i + PACKAGE_LENGTH <= _size; i += PACKAGE_LENGTH)
     {
         const PACKAGE_FLOAT packedValues = _LOAD(_values + i); // Load values from memory
@@ -362,7 +349,6 @@ void Tensor<Dimensions...>::apply_Softmax_derivative()
 
     float* lossGradientValue = (float*)_values;
 
-    #pragma omp parallel for schedule(dynamic)
     // For each loss gradient values
     for (size_t i = 0; i < _size; i++)
     {
@@ -397,7 +383,6 @@ float Cross_Entropy_loss(const Tensor<Dimensions...>& prediction, const Tensor<D
 
         size_t i = PACKAGE_LENGTH;
 
-        #pragma omp parallel for schedule(dynamic)
         for (; i + PACKAGE_LENGTH <= size; i += PACKAGE_LENGTH)
         {
             const PACKAGE_FLOAT labelsValues = _LOAD(labels._values + i); // Load labels from memory
